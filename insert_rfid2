@@ -73,9 +73,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
                 // Kirim pesan WhatsApp sesuai status
 if ($status === "Hadir") {
-    $pesan = "Halo $nama, terima kasih sudah hadir tepat waktu pada $tanggal pukul $waktu. Tetap semangat dan pertahankan disiplinmu!";
+    $pesan = "Halo anak anda atas nama $nama, terima kasih sudah hadir tepat waktu pada $tanggal pukul $waktu. ";
 } elseif ($status === "Terlambat") {
-    $pesan = "Halo $nama, Anda telah melakukan absensi pada $tanggal pukul $waktu dengan status *Terlambat*. Mohon lebih disiplin waktu ya!";
+    $pesan = "Halo anak anda atas nama $nama, telah melakukan absensi pada $tanggal pukul $waktu dengan status *Terlambat*. Mohon lebih disiplin waktu ya!";
 } else {
     $pesan = "Halo $nama, absensi Anda pada $tanggal pukul $waktu berhasil dicatat dengan status: $status.";
 }
