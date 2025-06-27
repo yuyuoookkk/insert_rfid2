@@ -1,0 +1,747 @@
+<?php
+session_start();
+
+// Set zona waktu
+date_default_timezone_set('Asia/Singapore');
+
+// Koneksi ke database
+$conn = new mysqli("localhost", "root", "indonesia45", "absensi2");
+
+// Cek koneksi
+if ($conn->connect_error) {
+    die("Koneksi gagal: " . $conn->connect_error);
+}
+
+$absensi_result = "";
+$absensi_status = "";
+$employee_data = null;
+
+if (isset($_GET['user_id'])) {
+    $user_id = $_GET['user_id'];
+
+    // Ambil data pegawai
+    $sql = "SELECT * FROM users WHERE user_id = '$user_id'";
+    $result = $conn->query($sql);
+
+    if ($result->num_rows > 0) {
+        $employee_data = $result->fetch_assoc();
+    }
+}
+
+// Jika tombol Absen diklik
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    $user_id = $_POST['user_id'];
+    $tanggal = date("Y-m-d");
+    $waktu = date("H:i:s");
+
+    // Cek apakah user sudah absen hari ini
+    $cek_absensi = "SELECT * FROM absensi WHERE user_id = '$user_id' AND tanggal = '$tanggal'";
+    $result_absensi = $conn->query($cek_absensi);
+
+    if ($result_absensi->num_rows > 0) {
+        $absensi_result = "Anda sudah absen hari ini! Tidak dapat absen dua kali.";
+        $absensi_status = "error";
+    } else {
+        // Cek apakah user_id ada di tabel users
+        $sql = "SELECT * FROM users WHERE user_id = '$user_id'";
+        $result = $conn->query($sql);
+
+        if ($result->num_rows > 0) {
+            $employee_data = $result->fetch_assoc();
+            $nama = $employee_data['nama'];
+            $jabatan = $employee_data['jabatan'];
+            $departemen = $employee_data['departemen'];
+            $foto = !empty($employee_data['foto']) ? "../uploads/" . $employee_data['foto'] : "../uploads/default.jpg";
+            $start_time = $employee_data['start_time'];
+            $batas_waktu_absen = $employee_data['batas_waktu_absen'];
+            $whatsapp = $employee_data['telepon']; // ambil nomor WA dari database
+
+            // Tentukan status absensi
+            if ($waktu >= $start_time && $waktu <= $batas_waktu_absen) {
+                $status = "Hadir";
+            } else {
+                $status = "Terlambat";
+            }
+
+            // Simpan ke database
+            $sql_absen = "INSERT INTO absensi (user_id, tanggal, waktu, status)
+                          VALUES ('$user_id', '$tanggal', '$waktu', '$status')";
+
+            if ($conn->query($sql_absen) === TRUE) {
+                $absensi_result = "Absensi berhasil!";
+                $absensi_status = "success";
+
+                // Kirim pesan WhatsApp sesuai status
+if ($status === "Hadir") {
+    $pesan = "Halo $nama, terima kasih sudah hadir tepat waktu pada $tanggal pukul $waktu. Tetap semangat dan pertahankan disiplinmu!";
+} elseif ($status === "Terlambat") {
+    $pesan = "Halo $nama, Anda telah melakukan absensi pada $tanggal pukul $waktu dengan status *Terlambat*. Mohon lebih disiplin waktu ya!";
+} else {
+    $pesan = "Halo $nama, absensi Anda pada $tanggal pukul $waktu berhasil dicatat dengan status: $status.";
+}
+
+// Encode dan kirim ke WhatsApp API
+$pesan_encoded = urlencode($pesan);
+$whatsapp_api_url = "https://whatsapi.biz.id/api/send-message?phone=" . urlencode($whatsapp) . "&text=$pesan_encoded&apikey=junior";
+
+// Kirim pesan via cURL
+$ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, $whatsapp_api_url);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+$wa_response = curl_exec($ch);
+curl_close($ch);
+
+                // file_put_contents("wa_log.txt", $wa_response . PHP_EOL, FILE_APPEND);
+            } else {
+                $absensi_result = "Gagal menyimpan absensi: " . $conn->error;
+                $absensi_status = "error";
+            }
+        } else {
+            $absensi_result = "User ID tidak ditemukan!";
+            $absensi_status = "error";
+        }
+    }
+}
+?>
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Absensi Siswa</title>
+    <style>
+        /* CSS Anda tetap sama */
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+        
+        body {
+            background-color: #f5f7fa;
+            min-height: 100vh;
+        }
+        
+        /* Header styles */
+        .header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 15px 0;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            position: relative;
+            z-index: 100;
+        }
+        
+        .container {
+            width: 90%;
+            margin: 0 auto;
+            max-width: 1200px;
+        }
+        
+        .nav-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+            padding: 0 10px;
+        }
+        
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        
+        .logo-link {
+            color: white;
+            text-decoration: none;
+            transition: opacity 0.3s;
+        }
+        
+        .logo-link:hover {
+            opacity: 0.9;
+        }
+        
+        .nav-menu {
+            display: flex;
+            list-style: none;
+        }
+        
+        .nav-menu li {
+            margin-left: 20px;
+        }
+        
+        .nav-menu a {
+            color: white;
+            text-decoration: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        
+        .nav-menu a:hover {
+            background-color: #34495e;
+        }
+        
+        .active {
+            background-color: #3498db;
+        }
+        
+        .content {
+            padding: 20px;
+        }
+        
+        /* Page specific styles */
+        .page-title {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 24px;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .page-subtitle {
+            color: #7f8c8d;
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 16px;
+        }
+        
+        .attendance-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 30px;
+            justify-content: center;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        .attendance-form-card {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            padding: 30px;
+            flex: 1;
+            min-width: 320px;
+            transition: transform 0.3s, box-shadow 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .attendance-form-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        
+        .attendance-form-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(to right, #3498db, #2c3e50);
+        }
+        
+        .attendance-result-card {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            padding: 30px;
+            flex: 1;
+            min-width: 320px;
+            display: <?php echo ($employee_data && $absensi_status == "success") ? 'block' : 'none'; ?>;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .attendance-result-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(to right, #27ae60, #2ecc71);
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+            position: relative;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: bold;
+            color: #2c3e50;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #ecf0f1;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.3s;
+            background-color: #f8f9fa;
+        }
+        
+        .form-input:focus {
+            border-color: #3498db;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+            background-color: white;
+        }
+        
+        .btn-submit {
+            background: linear-gradient(to right, #3498db, #2980b9);
+            color: white;
+            border: none;
+            padding: 15px 20px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 100%;
+            box-shadow: 0 4px 6px rgba(52, 152, 219, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .btn-submit:hover {
+            background: linear-gradient(to right, #2980b9, #2c3e50);
+            box-shadow: 0 6px 8px rgba(52, 152, 219, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        .btn-submit:active {
+            transform: translateY(1px);
+            box-shadow: 0 2px 4px rgba(52, 152, 219, 0.2);
+        }
+        
+        .btn-submit::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 5px;
+            height: 5px;
+            background: rgba(255, 255, 255, 0.5);
+            opacity: 0;
+            border-radius: 100%;
+            transform: scale(1, 1) translate(-50%);
+            transform-origin: 50% 50%;
+        }
+        
+        .btn-submit:focus:not(:active)::after {
+            animation: ripple 1s ease-out;
+        }
+        
+        @keyframes ripple {
+            0% {
+                transform: scale(0, 0);
+                opacity: 0.5;
+            }
+            20% {
+                transform: scale(25, 25);
+                opacity: 0.3;
+            }
+            100% {
+                opacity: 0;
+                transform: scale(40, 40);
+            }
+        }
+        
+        .clock-container {
+            background: linear-gradient(135deg, #2c3e50, #34495e);
+            color: white;
+            padding: 25px 20px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .clock-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM12 86c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm28-65c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm23-11c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-6 60c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm29 22c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zM32 63c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm57-13c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-9-21c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM60 91c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM35 41c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 60c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2z' fill='%23ffffff' fill-opacity='0.05' fill-rule='evenodd'/%3E%3C/svg%3E");
+            opacity: 0.1;
+        }
+        
+        .clock-label {
+            font-size: 14px;
+            margin-bottom: 10px;
+            opacity: 0.8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .clock-time {
+            font-size: 48px;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+            text-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            margin-bottom: 5px;
+        }
+        
+        .clock-date {
+            font-size: 16px;
+            margin-top: 5px;
+            opacity: 0.9;
+        }
+        
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+            position: relative;
+            animation: slideDown 0.5s ease-out;
+        }
+        
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .alert-success {
+            background-color: #d4edda;
+            color: #155724;
+            border-left: 4px solid #28a745;
+        }
+        
+        .alert-danger {
+            background-color: #f8d7da;
+            color: #721c24;
+            border-left: 4px solid #dc3545;
+        }
+        
+        .employee-profile {
+            text-align: center;
+            margin-bottom: 30px;
+            position: relative;
+        }
+        
+        .employee-photo {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin-bottom: 15px;
+            border: 4px solid #3498db;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s;
+        }
+        
+        .employee-photo:hover {
+            transform: scale(1.05);
+        }
+        
+        .employee-name {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        
+        .employee-position {
+            color: #7f8c8d;
+            margin-bottom: 10px;
+        }
+        
+        .employee-department {
+            display: inline-block;
+            background-color: #f1f9ff;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            color: #3498db;
+            font-weight: bold;
+            box-shadow: 0 2px 5px rgba(52, 152, 219, 0.1);
+        }
+        
+        .attendance-details {
+            margin-top: 30px;
+            border-top: 1px solid #ecf0f1;
+            padding-top: 20px;
+        }
+        
+        .attendance-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 15px 0;
+            border-bottom: 1px solid #ecf0f1;
+            transition: background-color 0.3s;
+        }
+        
+        .attendance-item:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .attendance-item:last-child {
+            border-bottom: none;
+        }
+        
+        .attendance-label {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .attendance-value {
+            color: #7f8c8d;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+        }
+        
+        .status-hadir {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .status-terlambat {
+            background-color: #fff3e0;
+            color: #e65100;
+        }
+        
+        .status-izin {
+            background-color: #e3f2fd;
+            color: #1565c0;
+        }
+        
+        .attendance-success-icon {
+            font-size: 64px;
+            color: #27ae60;
+            margin-bottom: 15px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.1);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+        
+        .attendance-success-message {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+        
+        .attendance-success-time {
+            font-size: 16px;
+            color: #7f8c8d;
+            margin-bottom: 30px;
+        }
+        
+        .attendance-card-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .attendance-card-icon {
+            background-color: #f1f9ff;
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            color: #3498db;
+            font-size: 20px;
+        }
+        
+        .attendance-card-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .attendance-note {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #7f8c8d;
+            border-left: 4px solid #3498db;
+        }
+        
+        .attendance-note-title {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        
+        @media (max-width: 768px) {
+            .attendance-container {
+                flex-direction: column;
+            }
+            
+            .nav-menu {
+                display: none;
+            }
+            
+            .hamburger {
+                display: flex;
+            }
+            
+            .clock-time {
+                font-size: 36px;
+            }
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="container content"><br>
+    <h2 class="page-title">Sistem Absensi Siswa</h2>
+    <p class="page-subtitle">Silakan masukkan ID Siswa untuk melakukan absensi hari ini</p>
+
+    <div class="attendance-container">
+        <!-- Form Absensi -->
+        <div class="attendance-form-card">
+            <div class="attendance-card-header">
+                <div class="attendance-card-icon">📝</div>
+                <div class="attendance-card-title">Form Absensi</div>
+            </div>
+            
+            <div class="clock-container">
+                <div class="clock-label">Waktu Saat Ini</div>
+                <div class="clock-time" id="current-time">00:00:00</div>
+                <div class="clock-date" id="current-date">Senin, 1 Januari 2023</div>
+            </div>
+            
+            <?php if ($absensi_result): ?>
+                <div class="alert <?php echo $absensi_status == 'success' ? 'alert-success' : 'alert-danger'; ?>">
+                    <?php echo $absensi_result; ?>
+                </div>
+            <?php endif; ?>
+            
+            <form method="POST" id="absensiForm">
+                <div class="form-group">
+                    <label class="form-label" for="user_id">ID Siswa:</label>
+                    <input type="password" id="user_id" name="user_id" class="form-input" autocomplete="off" required 
+                           value="<?php echo isset($_GET['user_id']) ? $_GET['user_id'] : ''; ?>"
+                           placeholder="Masukkan ID siswa Anda">
+                </div>
+                
+                <button type="submit" name="absen" class="btn-submit">Absen Sekarang</button>
+            </form>
+            
+            <div class="attendance-note">
+                <div class="attendance-note-title">Catatan:</div>
+                <p>Absensi hanya dapat dilakukan satu kali per hari. Pastikan Anda memasukkan ID siswa dengan benar.</p>
+            </div>
+        </div>
+        
+        <!-- Hasil Absensi -->
+        <div class="attendance-result-card" id="attendanceResult">
+            <?php if ($employee_data && $absensi_status == "success"): ?>
+                <div class="attendance-card-header">
+                    <div class="attendance-card-icon" style="background-color: #e8f5e9; color: #27ae60;">✓</div>
+                    <div class="attendance-card-title">Absensi Berhasil</div>
+                </div>
+                
+                <div class="employee-profile">
+                    <div class="attendance-success-icon">✓</div>
+                    <div class="attendance-success-message">Absensi Berhasil Dicatat!</div>
+                    <div class="attendance-success-time">Pada <?php echo date("d F Y, H:i:s"); ?></div>
+                    
+                    <!-- Tampilkan foto pegawai -->
+                    <img src="<?php echo $foto; ?>" 
+                         alt="Foto Siswa" class="employee-photo">
+                    <div class="employee-name"><?php echo $employee_data['nama']; ?></div>
+                    <div class="employee-position"><?php echo $employee_data['jabatan']; ?></div>
+                    <div class="employee-department"><?php echo $employee_data['departemen']; ?></div>
+                </div>
+                
+                <div class="attendance-details">
+                    <div class="attendance-item">
+                        <div class="attendance-label">Tanggal</div>
+                        <div class="attendance-value"><?php echo date("d F Y"); ?></div>
+                    </div>
+                    <div class="attendance-item">
+                        <div class="attendance-label">Waktu Absen</div>
+                        <div class="attendance-value"><?php echo date("H:i:s"); ?></div>
+                    </div>
+                    <div class="attendance-item">
+                        <div class="attendance-label">Status</div>
+                        <div class="attendance-value">
+                            <span class="status-badge status-<?php echo strtolower($status); ?>">
+                                <?php echo $status; ?>
+                            </span>
+                        </div>
+                    </div>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+
+<script>
+// Update time and date
+function updateDateTime() {
+    const now = new Date();
+    
+    // Format time: HH:MM:SS
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const timeString = `${hours}:${minutes}:${seconds}`;
+    
+    // Format date: Day, DD Month YYYY
+    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    const dateString = now.toLocaleDateString('id-ID', options);
+    
+    document.getElementById('current-time').innerText = timeString;
+    document.getElementById('current-date').innerText = dateString;
+}
+
+// Update time every second
+setInterval(updateDateTime, 1000);
+updateDateTime();
+
+// Show attendance result if form is submitted successfully
+<?php if ($absensi_status == "success"): ?>
+document.getElementById('attendanceResult').style.display = 'block';
+<?php endif; ?>
+</script>
+
+</body>
+</html>
+
+<?php $conn->close(); ?>
